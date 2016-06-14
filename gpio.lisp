@@ -18,25 +18,16 @@
 (in-package #:cl-user)
 (defpackage #:gpio
   (:use #:common-lisp)
-  #+gpio-rp
-  (:import-from #:gpio-driver-rp
+  (:import-from #+gpio-rp
+		#:gpio-driver-rp
+		#+gpio-opp
+		#:gpio-driver-opp
+		#+gpio-null
+		#:gpio-driver-null
 		#:init-paths
 		#:cfg-pins
 		#:*paths*
 		#:*devices-path*)
-  #+gpio-opp
-  (:import-from #:gpio-driver-opp
-		#:init-paths
-		#:cfg-pins
-		#:*paths*
-		#:*devices-path*)
-  #+gpio-null
-  (:import-from #:gpio-driver-null
-		#:init-paths
-		#:cfg-pins
-		#:*paths*
-		#:*devices-path*)
-
   (:export #:write-pin
 	   #:read-pin
 	   #:cfg-pins))
@@ -45,11 +36,11 @@
 (defun write-pin (pin value)
   (unless *paths* (setf *paths* (init-paths *devices-path*)))
   (with-open-file (pin-out (cadr (assoc pin *paths*))
-			   :direction :output :if-exists :append)
+			   :direction :output :if-exists :overwrite)
     (princ value pin-out)))
 
 (defun read-pin (pin)
   (unless *paths* (setf *paths* (init-paths *devices-path*)))
   (with-open-file (pin-in (cadr (assoc pin *paths*))
-			  :direction :input :if-exists :append)
+			  :direction :input)
     (read-line pin-in)))
