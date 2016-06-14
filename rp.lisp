@@ -22,9 +22,9 @@
 	   #:cfg-pins
 	   #:*paths*
 	   #:*devices-path*)
-  #|(:import-from #:uiop
-  #:directory*
-  #:split-unix-namestring-directory-components)|#)
+  (:import-from #:uiop
+		#:directory*
+		#:split-unix-namestring-directory-components))
 (in-package #:gpio-driver-rp)
 
 (defparameter *export-file* #P"/sys/class/gpio/export")
@@ -32,7 +32,17 @@
 (defparameter *paths* nil)
 
 (defun init-paths (devices-path)
-  )
+  (mapcar (lambda (path)
+	    (multiple-value-bind (flag path-parts)
+		(split-unix-namestring-directory-components (namestring path))
+	      (declare (ignore flag))
+	      (let* ((pin-name (car (last path-parts)))
+		     (pin-path (merge-pathnames (concatenate 'string
+							     pin-name "/")
+						devices-path)))
+		(list (intern (string-upcase pin-name) :keyword)
+		      (merge-pathnames "value" pin-path)))))
+	  (directory* (merge-pathnames #P"gpio*" devices-path))))
 
 (defun cfg-pins (pinsdef)
   (mapc (lambda (pindef)
@@ -52,26 +62,6 @@
 		(sleep 1)
 		(with-open-file (pin-direction (merge-pathnames "direction" pin-path)
 					       :direction :output :if-exists :append)
-		  (format pin-direction "~A~%"
-			  (string-downcase (symbol-name direction))))))))
-	pinsdef))
-
-(defun write-pin (pin value)
-  (with-open-file
-      (pin-st (merge-pathnames "value"
-			       (merge-pathnames (concatenate 'string
-							     (symbol-name pin)
-							     "/")
-						*devices-path*))
-	      :direction :output :if-exists :append)
-    (princ value pin-st)))
-
-(defun read-pin (pin)
-  (with-open-file
-      (pin-st (merge-pathnames "value"
-			       (merge-pathnames (concatenate 'string
-							     (symbol-name pin)
-							     "/")
-						*devices-path*))
-	      :direction :input :if-exists :append)
-    (read-line pin-st)))
+		  (format pin-direction "~A~%" (string-downcase (symbol-name direction))))))))
+	pinsdef)
+  (when pinsdef (setf *paths* nil)))
