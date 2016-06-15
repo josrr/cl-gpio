@@ -35,12 +35,14 @@
 
 (defun write-pin (pin value)
   (unless *paths* (setf *paths* (init-paths *devices-path*)))
-  (with-open-file (pin-out (cadr (assoc pin *paths*))
-			   :direction :output :if-exists :overwrite)
-    (princ value pin-out)))
+  (let ((paths (assoc pin *paths*)))
+    (when paths
+      (with-open-file (pin-out (cadr paths) :direction :output :if-exists :overwrite)
+	(princ value pin-out)))))
 
 (defun read-pin (pin)
   (unless *paths* (setf *paths* (init-paths *devices-path*)))
-  (with-open-file (pin-in (cadr (assoc pin *paths*))
-			  :direction :input)
-    (read-line pin-in)))
+  (let ((paths (assoc pin *paths*)))
+    (when paths
+      (with-open-file (pin-in (cadr paths) :direction :input)
+	(values (parse-integer (read-line pin-in)))))))
