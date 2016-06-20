@@ -63,7 +63,7 @@
   (loop with exists = nil
      while (null exists)
      do (do-events (event inotify)
-	  (format t "event: ~S~%~%" event)
+	  ;;(format t "event: ~S~%~%" event)
 	  (setf exists t)))
   (close-inotify inotify)
   (loop while (null (probe-file file))))
