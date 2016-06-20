@@ -21,6 +21,7 @@
   :version "0.1"
   :author "José Miguel Ronquillo Rivera <josrr@ymail.com>"
   :license "GPLv3"
+  :depends-on (#:cl-inotify)
   :serial t
   :perform (prepare-op :after (op c)
 		       (cond ((probe-file #P"/sys/class/gpio_sw/") (pushnew :gpio-opp *features*))

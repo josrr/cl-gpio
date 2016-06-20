@@ -22,13 +22,23 @@
 	   #:cfg-pins
 	   #:*paths*
 	   #:*devices-path*)
+  (:import-from #:cl-inotify
+		#:make-inotify
+		#:watch
+		#:do-events
+		#:unwatch
+		#:next-events
+		#:read-event
+		#:close-inotify)
   (:import-from #:uiop
+		#:file-exists-p
+		#:directory-exists-p
 		#:directory*
 		#:split-unix-namestring-directory-components))
 (in-package #:gpio-driver-rp)
 
 (defparameter *export-file* #P"/sys/class/gpio/export")
-(defparameter *devices-path* #P"/sys/class/gpio/")
+(defparameter *devices-path* #P"/sys/devices/virtual/gpio/")
 (defparameter *paths* nil)
 
 (defun init-paths (devices-path)
@@ -44,24 +54,50 @@
 		      (merge-pathnames "value" pin-path)))))
 	  (directory* (merge-pathnames #P"gpio*" devices-path))))
 
+(defun init-wait-for-path (path)
+  (let ((inotify (make-inotify)))
+    (watch inotify path :all-events)
+    inotify))
+
+(defun wait-for-path (inotify file)
+  (loop with exists = nil
+     while (null exists)
+     do (do-events (event inotify)
+	  (format t "event: ~S~%~%" event)
+	  (setf exists t)))
+  (close-inotify inotify)
+  (loop while (null (probe-file file))))
+
+(defun write-sym (path sym)
+  (when (probe-file path)
+    (loop while
+	 (null (handler-case
+		   (with-open-file (stream path :direction :output :if-exists :append)
+		     (princ (string-downcase (symbol-name sym)) stream))
+		 (error (c) (declare (ignore c)) nil))))))
+
+(defun write-num (path num)
+  (when (probe-file path)
+    (with-open-file (stream path :direction :output :if-exists :append)
+      (princ num stream))))
+
 (defun cfg-pins (pinsdef)
-  (mapc (lambda (pindef)
-	  (destructuring-bind (pin &key (direction)) pindef
-	    (let* ((pin-name (symbol-name pin))
-		   (pin-number (parse-integer (subseq pin-name 4) :junk-allowed t))
-		   (pin-path (merge-pathnames
-			      (concatenate 'string
-					   (string-downcase pin-name) "/")
-			      *devices-path*)))
-	      (when (and (or (eq direction :out) (eq direction :in))
-			 (equal (subseq pin-name 0 4) "GPIO")
-			 pin-number)
-		(or (probe-file pin-path)
-		    (with-open-file (export *export-file* :direction :output :if-exists :append)
-		      (format export "~D" pin-number)))
-		(sleep 1)
-		(with-open-file (pin-direction (merge-pathnames "direction" pin-path)
-					       :direction :output :if-exists :append)
-		  (format pin-direction "~A~%" (string-downcase (symbol-name direction))))))))
-	pinsdef)
+  (loop for (pin &key direction) in pinsdef
+     for pin-name = (symbol-name pin)
+     if (and (> (length pin-name) 4)
+	     (equal (subseq pin-name 0 4) "GPIO"))
+     do (let ((pin-number (parse-integer (subseq pin-name 4)
+					 :junk-allowed t))
+	      (direction-path (merge-pathnames "direction"
+					       (merge-pathnames
+						(concatenate 'string
+							     (string-downcase pin-name) "/")
+						*devices-path*))))
+	  (when (and (or (eq direction :out) (eq direction :in))
+		     pin-number)
+	    (when (not (probe-file direction-path))
+	      (let ((inotify (init-wait-for-path *devices-path*)))
+		(write-num *export-file* pin-number)
+		(wait-for-path inotify direction-path)))
+	    (write-sym direction-path direction))))
   (when pinsdef (setf *paths* nil)))
