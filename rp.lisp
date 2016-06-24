@@ -26,9 +26,6 @@
 		#:make-inotify
 		#:watch
 		#:do-events
-		#:unwatch
-		#:next-events
-		#:read-event
 		#:close-inotify)
   (:import-from #:uiop
 		#:file-exists-p
@@ -63,7 +60,6 @@
   (loop with exists = nil
      while (null exists)
      do (do-events (event inotify)
-	  ;;(format t "event: ~S~%~%" event)
 	  (setf exists t)))
   (close-inotify inotify)
   (loop while (null (probe-file file))))
@@ -82,22 +78,26 @@
       (princ num stream))))
 
 (defun cfg-pins (pinsdef)
-  (loop for (pin &key direction) in pinsdef
-     for pin-name = (symbol-name pin)
-     if (and (> (length pin-name) 4)
-	     (equal (subseq pin-name 0 4) "GPIO"))
-     do (let ((pin-number (parse-integer (subseq pin-name 4)
-					 :junk-allowed t))
-	      (direction-path (merge-pathnames "direction"
-					       (merge-pathnames
-						(concatenate 'string
-							     (string-downcase pin-name) "/")
-						*devices-path*))))
-	  (when (and (or (eq direction :out) (eq direction :in))
-		     pin-number)
-	    (when (not (probe-file direction-path))
-	      (let ((inotify (init-wait-for-path *devices-path*)))
-		(write-num *export-file* pin-number)
-		(wait-for-path inotify direction-path)))
-	    (write-sym direction-path direction))))
+  (mapc (lambda (pindef)
+	  (destructuring-bind (pin &key direction edge) pindef
+	    (let ((pin-name (symbol-name pin)))
+	      (when (and (> (length pin-name) 4)
+			 (equal (subseq pin-name 0 4) "GPIO"))
+		(let* ((pin-number (parse-integer (subseq pin-name 4)
+						  :junk-allowed t))
+		       (pin-path (merge-pathnames
+				  (concatenate 'string
+					       (string-downcase (symbol-name pin)) "/")
+				  *devices-path*))
+		       (direction-path (merge-pathnames "direction" pin-path)))
+		  (when pin-number
+		    (when (not (probe-file direction-path))
+		      (let ((inotify (init-wait-for-path *devices-path*)))
+			(write-num *export-file* pin-number)
+			(wait-for-path inotify direction-path)))
+		    (when (member direction '(:out :in))
+		      (write-sym direction-path direction))
+		    (when (member edge '(:none :rising :falling))
+		      (write-sym (merge-pathnames "edge" pin-path) edge))))))))
+	pinsdef)
   (when pinsdef (setf *paths* nil)))

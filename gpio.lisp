@@ -28,9 +28,16 @@
 		#:cfg-pins
 		#:*paths*
 		#:*devices-path*)
+  (:import-from #:cl-inotify
+		#:make-inotify
+		#:watch
+		#:do-events
+		#:close-inotify
+		#:inotify-event-wd)
   (:export #:write-pin
 	   #:read-pin
-	   #:cfg-pins))
+	   #:cfg-pins
+	   #:do-gpio-events))
 (in-package #:gpio)
 
 (defun write-pin (pin value)
@@ -46,3 +53,35 @@
     (when paths
       (with-open-file (pin-in (cadr paths) :direction :input)
 	(values (parse-integer (read-line pin-in)))))))
+
+
+(defparameter *go-on* t)
+
+(defun do-gpio-events-int (actions every-cycle)
+  (unless *paths* (setf *paths* (init-paths *devices-path*)))
+  (let ((inotify (make-inotify)))
+    (unwind-protect
+	 (let ((pins-wds (mapcar (lambda (action)
+				   (let ((paths (assoc (car action) *paths*)))
+				     (when paths
+				       `(,(watch inotify (cadr paths) '(:modify))
+					  ,(car action)))))
+				 actions)))
+	   (loop while *go-on*
+	      if every-cycle do (funcall every-cycle)
+	      do (do-events (event inotify :blocking-p nil)
+		   (let* ((pin (cadr (assoc (inotify-event-wd event) pins-wds)))
+			  (action (cadr (assoc pin actions))))
+		     (when action
+		       (funcall action pin (read-pin pin)))))))
+      (close-inotify inotify))))
+
+(defun expand-actions (actions)
+  (mapcar (lambda (action)
+	    `(list ,(car action)
+		   (lambda ,(caadr action)
+		     ,@(cdadr action))))
+	  actions))
+
+(defmacro do-gpio-events (actions &optional every-cycle)
+  `(do-gpio-events-int `(,,@(expand-actions actions)) ,every-cycle))
